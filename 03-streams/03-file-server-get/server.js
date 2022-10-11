@@ -1,4 +1,3 @@
-const url = require('url');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
@@ -22,7 +21,7 @@ server.on('request', (req, res) => {
       const readStream = fs.createReadStream(filepath);
       readStream.pipe(res);
 
-      readStream.on('error', ({ code }) => {
+      readStream.on('error', ({code}) => {
         if (code === 'ENOENT') {
           res.statusCode = 404;
           res.end(`Not Found - ${filepath} - ${pathname}`);

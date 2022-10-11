@@ -3,7 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const LimitSizeStream = require('./LimitSizeStream');
 const server = new http.Server();
-const {pipeline} = require('stream');
+
+const SIZE_LIMIT = 1048576;
 
 server.on('request', (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -13,39 +14,52 @@ server.on('request', (req, res) => {
 
   switch (req.method) {
     case 'POST':
-      if (~pathname.indexOf('/')) {
+      if (pathname.includes('/') || pathname.includes('..')) {
         res.statusCode = 400;
         res.end('FATAL ERROR!!!!');
         break;
       }
 
-      if (fs.existsSync(filepath)) {
-        res.statusCode = 409;
-        res.end('File already exists!');
-        break;
+      if (req.headers['content-length'] > SIZE_LIMIT) {
+        res.statusCode = 413;
+        res.end('Limit exceeded');
       }
 
-      const limitedStream = new LimitSizeStream({limit: 1048576, encoding: 'utf-8'}); // 8 байт
-      const writeStream = fs.createWriteStream(filepath);
+      const limitedStream = new LimitSizeStream({limit: SIZE_LIMIT});
+      const writeStream = fs.createWriteStream(filepath, {flags: 'wx'});
 
-      pipeline(req, limitedStream, writeStream, (err) => {
-        if (err) {
-          fs.rmSync(filepath);
+      req.pipe(limitedStream).pipe(writeStream);
 
-          if (err.code === 'LIMIT_EXCEEDED') {
-            res.statusCode = 413;
-            // QUESTION: не понимаю, почему тут res.end не завершает обработку запроса
-            res.end('Limit exceeded');
-          } else {
-            res.statusCode = 500;
-            res.end('Unknown error');
-          }
+      limitedStream.on('error', (error) => {
+        if (error.code === 'LIMIT_EXCEEDED') {
+          res.statusCode = 413;
+          res.end('Limit exceeded');
         } else {
-          res.statusCode = 201;
-          res.end('Success');
+          res.statusCode = 500;
+          res.end('Internal server error');
+        }
+
+        fs.unlink(filepath, () => {});
+      });
+
+      writeStream.on('error', (error) => {
+        if (error.code === 'EEXIST') {
+          res.statusCode = 409;
+          res.end('file exist');
+        } else {
+          res.statusCode = 500;
+          res.end('Internal server error');
         }
       });
 
+      req.on('aborted', () => {
+        fs.unlink(filepath, () => {});
+      });
+
+      writeStream.on('finish', () => {
+        res.statusCode = 201;
+        res.end('succeeded');
+      });
       break;
 
     default:
