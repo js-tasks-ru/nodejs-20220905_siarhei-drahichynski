@@ -1,6 +1,28 @@
 module.exports = class Validator {
   constructor(rules) {
+    this._validateConstructor(rules);
+
     this.rules = rules;
+  }
+
+  _validateConstructor(rules) {
+    if (!Object.keys(rules).length) {
+      throw new Error('At least one rule required');
+    }
+
+    const forbiddenField = Object.entries(rules).find(([ruleName, rule]) => {
+      return rule.type !== 'string' && rule.type !== 'number';
+    });
+
+    if (forbiddenField) {
+      throw new Error(`Rule ${forbiddenField[0]} has forbidden type - ${forbiddenField[1].type}, expected string or number`);
+    }
+
+    const missing = Object.entries(rules).find(([ruleName, rule]) => rule.min == null || rule.max == null);
+
+    if (missing) {
+      throw new Error(`${missing[0]} is lacking required fields`);
+    }
   }
 
   validate(obj) {
@@ -31,7 +53,7 @@ module.exports = class Validator {
             errors.push({field, error: `too little, expect ${rules.min}, got ${value}`});
           }
           if (value > rules.max) {
-            errors.push({field, error: `too big, expect ${rules.min}, got ${value}`});
+            errors.push({field, error: `too big, expect ${rules.max}, got ${value}`});
           }
           break;
       }
@@ -40,3 +62,4 @@ module.exports = class Validator {
     return errors;
   }
 };
+
